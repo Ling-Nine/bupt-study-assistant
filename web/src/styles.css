@@ -527,10 +527,19 @@ html[data-platform="android"] .course-homework-badge { flex: 0 0 auto; margin-to
 .conversation-sidebar .icon-button:disabled { opacity: .35; cursor: not-allowed; }
 
 .notification-list { overflow: hidden; }
-.notification-list > button { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 86px; padding: 13px 17px; border: 0; border-bottom: 1px solid var(--border); background: transparent; text-align: left; cursor: pointer; }
-.notification-list > button:last-child { border-bottom: 0; }
-.notification-list > button.unread { background: color-mix(in srgb, var(--blue-soft) 45%, transparent); }
-.notification-list > button:hover { background: var(--surface-soft); }
+.notification-row { position: relative; overflow: hidden; border-bottom: 1px solid var(--border); }
+.notification-row:last-child { border-bottom: 0; }
+.notification-item { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 86px; padding: 13px 17px; border: 0; background: transparent; text-align: left; cursor: pointer; transition: transform .2s ease; }
+.notification-item.unread { background: color-mix(in srgb, var(--blue-soft) 45%, transparent); }
+.notification-item:hover { background: var(--surface-soft); }
+/* 删除条默认不可见：触摸左滑、桌面 hover、键盘聚焦到删除按钮时才露出。 */
+.notification-delete { position: absolute; top: 0; right: 0; display: grid; place-items: center; gap: 2px; width: 84px; height: 100%; padding: 0; border: 0; color: #fff; background: var(--red); cursor: pointer; font-size: 11px; font-weight: 650; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
+.notification-row.revealed .notification-item, .notification-delete:focus-visible + .notification-item { transform: translateX(-84px); }
+.notification-row.revealed .notification-delete, .notification-delete:focus-visible { opacity: 1; pointer-events: auto; }
+@media (hover: hover) and (pointer: fine) {
+  .notification-row:hover .notification-item { transform: translateX(-84px); }
+  .notification-row:hover .notification-delete { opacity: 1; pointer-events: auto; }
+}
 .notification-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; }
 .notification-icon.type-task { color: var(--orange); background: var(--orange-soft); }
 .notification-icon.type-course { color: var(--blue); background: var(--blue-soft); }
@@ -959,7 +968,7 @@ html[data-platform="android"] .course-homework-badge { flex: 0 0 auto; margin-to
   .settings-section > label:not(.switch-row) { grid-column: 1; }
   .profile-editor { grid-template-columns: 46px minmax(0, 1fr); }
   .profile-fields { grid-template-columns: 1fr; }
-  .notification-list > button { grid-template-columns: 38px minmax(0, 1fr) auto; padding-inline: 13px; }
+  .notification-item { grid-template-columns: 38px minmax(0, 1fr) auto; padding-inline: 13px; }
   .today-heading { display: flex; }
   .today-heading > div { max-width: 100%; }
   .today-clock { align-items: flex-end; margin-top: 0; }

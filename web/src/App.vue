@@ -212,6 +212,10 @@ function requestNativeReminderPermissions(): void {
   window.youxuebanRuntime?.requestReminderPermissions?.();
 }
 let pageSwipe: { x: number; y: number; startedAt: number; page: PageId } | null = null;
+// 消息中心：左滑露出删除按钮，再点一次才真正删除。
+const revealedNotificationId = ref<number | null>(null);
+let notificationSwipe: { id: number; x: number; y: number; startedAt: number } | null = null;
+let notificationClickGuard: { id: number; until: number } | null = null;
 const sidebarRef = ref<HTMLElement | null>(null);
 const sidebarGlider = ref({ top: 0, height: 46, visible: false });
 const sidebarGliderReady = ref(false);
@@ -1079,6 +1083,60 @@ function endPageSwipe(event: TouchEvent): void {
   const index = mobileNavItems.findIndex((item) => item.id === currentPage.value);
   const next = mobileNavItems[index + (dx < 0 ? 1 : -1)];
   if (next) navigate(next.id);
+}
+
+function startNotificationSwipe(event: TouchEvent): void {
+  notificationSwipe = null;
+  notificationClickGuard = null;
+  if (event.touches.length !== 1) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const row = target.closest(".notification-row");
+  const id = Number(row instanceof HTMLElement ? row.dataset.notificationId : NaN);
+  if (!row || !Number.isInteger(id)) return;
+  if (revealedNotificationId.value !== null && revealedNotificationId.value !== id) revealedNotificationId.value = null;
+  const touch = event.touches[0]!;
+  notificationSwipe = { id, x: touch.clientX, y: touch.clientY, startedAt: performance.now() };
+}
+
+function endNotificationSwipe(event: TouchEvent): void {
+  const swipe = notificationSwipe;
+  notificationSwipe = null;
+  const touch = event.changedTouches[0];
+  if (!swipe || !touch || performance.now() - swipe.startedAt > 800) return;
+  const dx = touch.clientX - swipe.x;
+  const dy = touch.clientY - swipe.y;
+  // 只认方向明确的短横滑，竖向滚动或斜向滑动都交回给列表。
+  if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  notificationClickGuard = { id: swipe.id, until: performance.now() + 350 };
+  revealedNotificationId.value = dx < 0 ? swipe.id : null;
+}
+
+function cancelNotificationSwipe(): void {
+  notificationSwipe = null;
+}
+
+function handleNotificationClick(event: MouseEvent): void {
+  const guard = notificationClickGuard;
+  if (!guard || performance.now() > guard.until) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const row = target.closest(".notification-row");
+  if (!(row instanceof HTMLElement) || Number(row.dataset.notificationId) !== guard.id) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function openNotification(item: AppNotification): void {
+  // 已划开时先收起，避免把"想关掉删除按钮"误当成"标记已读"。
+  if (revealedNotificationId.value === item.id) { revealedNotificationId.value = null; return; }
+  item.read = true;
+}
+
+function deleteNotification(id: number): void {
+  revealedNotificationId.value = null;
+  notifications.value = notifications.value.filter((item) => item.id !== id);
+  showToast(TEXTS.common.notificationDeleted);
 }
 
 async function refreshLocalSettings(): Promise<void> {
@@ -3053,7 +3111,7 @@ function runAssistantAction(message: AssistantMessage): void {
 
         <section v-else-if="currentPage === 'notifications'" class="page narrow-page">
           <header class="page-heading split"><div><span class="eyebrow">消息中心</span><h1>通知</h1><p>课程、DDL 和校园动态都集中在这里</p></div><button class="secondary-button" type="button" @click="markAllNotificationsRead">全部已读</button></header>
-          <div class="notification-list surface"><button v-for="item in notifications" :key="item.id" type="button" :class="{ unread: !item.read }" @click="item.read = true"><span class="notification-icon" :class="`type-${item.type}`"><IconGlyph :name="item.type === 'course' ? 'courses' : item.type === 'task' ? 'tasks' : 'campus'" /></span><span><strong>{{ item.title }}</strong><small>{{ item.body }}</small><time>{{ formatDateTime(item.createdAt) }}</time></span><span v-if="!item.read" class="unread-dot" /></button></div>
+          <div class="notification-list surface" @click.capture="handleNotificationClick" @touchstart.passive="startNotificationSwipe" @touchend.passive="endNotificationSwipe" @touchcancel="cancelNotificationSwipe"><div v-for="item in notifications" :key="item.id" class="notification-row" :class="{ revealed: revealedNotificationId === item.id }" :data-notification-id="item.id"><button class="notification-delete" type="button" :aria-label="`删除通知：${item.title}`" @click="deleteNotification(item.id)"><IconGlyph name="trash" :size="15" /><span>删除</span></button><button class="notification-item" type="button" :class="{ unread: !item.read }" @click="openNotification(item)"><span class="notification-icon" :class="`type-${item.type}`"><IconGlyph :name="item.type === 'course' ? 'courses' : item.type === 'task' ? 'tasks' : 'campus'" /></span><span><strong>{{ item.title }}</strong><small>{{ item.body }}</small><time>{{ formatDateTime(item.createdAt) }}</time></span><span v-if="!item.read" class="unread-dot" /></button></div></div>
         </section>
 
         <section v-else class="page narrow-page settings-page">

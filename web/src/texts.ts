@@ -7,7 +7,7 @@ export const TEXTS = {
     settingsDescription: "管理提醒、显示和隐私",
     reminderDescription: "仅允许输入整数，最长可提前7天提醒",
     quietHoursDescription: "只有勾选“静默时段仍提醒”的事项才会在静默时段发出提醒",
-    credit: "由晏冬阳 崔谭煦 高靖凯制作",
+    credit: "原版由晏冬阳 崔谭煦 高靖凯制作，此版本为修改版",
     close: "关闭",
   },
   common: {
@@ -16,6 +16,7 @@ export const TEXTS = {
     profileSaved: "个人资料已保存",
     coursesCleared: "课表已清空",
     notificationsRead: "通知已全部已读",
+    notificationDeleted: "已删除该条通知",
     blankConversation: "当前已是空白对话，请先发送一条消息",
     campusLoadFailed: "校园数据加载失败",
   },
