@@ -69,9 +69,16 @@ interface AssistantToolResult {
   success: boolean;
   [key: string]: unknown;
 }
+interface AiProviderChoice {
+  id: string;
+  label: string;
+  baseUrl: string;
+  models: string[];
+}
+
 interface LocalSettingsStatus {
   campus: { configured: boolean; ssoAccount: string; jwglAccount: string; accountKey?: string };
-  ai: { configured: boolean; baseUrl: string; model: string };
+  ai: { configured: boolean; provider: string; baseUrl: string; model: string };
 }
 
 class AssistantCompletionError extends Error {
@@ -79,8 +86,6 @@ class AssistantCompletionError extends Error {
     super(message);
   }
 }
-
-const DEEPSEEK_API_URL = "https://api.deepseek.com";
 
 const assistantTools: Array<Record<string, unknown>> = [
   assistantFunction("course_list", "查看当前课表，可按星期筛选", {
@@ -332,7 +337,7 @@ const electricityError = ref("");
 const electricityEditing = ref(!electricityDormitory.value);
 const localSettings = ref<LocalSettingsStatus>({
   campus: { configured: false, ssoAccount: "", jwglAccount: "" },
-  ai: { configured: false, baseUrl: "", model: "" },
+  ai: { configured: false, provider: "", baseUrl: "", model: "" },
 });
 const accountBindingOpen = ref(false);
 const accountBindingBusy = ref(false);
@@ -342,7 +347,8 @@ const aiConfigOpen = ref(false);
 const aiConfigBusy = ref(false);
 const aiConfigError = ref("");
 const aiModels = ref<string[]>([]);
-const aiConfigForm = ref({ baseUrl: DEEPSEEK_API_URL, apiKey: "", model: "" });
+const aiProviders = ref<AiProviderChoice[]>([]);
+const aiConfigForm = ref({ provider: "deepseek", apiKey: "", model: "" });
 const campusDeleteConfirming = ref(false);
 const aiDeleteConfirming = ref(false);
 const sidebarWidth = ref(Math.max(190, Math.min(320, Number(saved.sidebarWidth) || 224)));
@@ -1081,7 +1087,7 @@ async function refreshLocalSettings(): Promise<void> {
     localSettings.value = payload as LocalSettingsStatus;
     accountBindingForm.value.ssoAccount = String(payload.campus.ssoAccount ?? "");
     accountBindingForm.value.jwglAccount = String(payload.campus.jwglAccount ?? "");
-    aiConfigForm.value.baseUrl = payload.ai.baseUrl;
+    aiConfigForm.value.provider = payload.ai.provider || aiConfigForm.value.provider;
     aiConfigForm.value.model = payload.ai.model;
   } catch {
     // The form will explain unavailable local runtime when the user opens it.
@@ -1147,7 +1153,7 @@ async function deleteAccountBinding(): Promise<void> {
 function openAiConfig(): void {
   aiConfigError.value = "";
   aiConfigForm.value = {
-    baseUrl: DEEPSEEK_API_URL,
+    provider: localSettings.value.ai.provider || aiProviders.value[0]?.id || "deepseek",
     apiKey: "",
     model: localSettings.value.ai.model,
   };
@@ -1155,17 +1161,30 @@ function openAiConfig(): void {
   void detectAiModels();
 }
 
+// 可选模型跟着服务来源走；接口地址由设备内运行时的来源表提供，界面不再保存地址。
+function applyAiProviderModels(): void {
+  const provider = aiProviders.value.find((item) => item.id === aiConfigForm.value.provider);
+  aiModels.value = provider ? [...provider.models] : [];
+  aiConfigForm.value.model = aiModels.value.includes(aiConfigForm.value.model) ? aiConfigForm.value.model : (aiModels.value[0] ?? "");
+}
+
+function onAiProviderChange(): void {
+  aiConfigForm.value.model = "";
+  applyAiProviderModels();
+}
+
+const aiConfigUrl = computed(() => aiProviders.value.find((item) => item.id === aiConfigForm.value.provider)?.baseUrl
+  ?? localSettings.value.ai.baseUrl);
+
 async function detectAiModels(): Promise<void> {
   aiConfigBusy.value = true;
   aiConfigError.value = "";
   try {
     const response = await apiFetch("/api/assistant/models");
-    const payload = await response.json() as { models?: string[]; model?: string; error?: string };
+    const payload = await response.json() as { providers?: AiProviderChoice[]; models?: string[]; model?: string; error?: string };
     if (!response.ok || !payload.models?.length) throw new Error(payload.error || TEXTS.ai.modelsUnavailable);
-    aiModels.value = payload.models;
-    aiConfigForm.value.model = aiConfigForm.value.model && payload.models.includes(aiConfigForm.value.model)
-      ? aiConfigForm.value.model
-      : payload.model || payload.models[0]!;
+    if (payload.providers?.length) aiProviders.value = payload.providers;
+    applyAiProviderModels();
   } catch (error) {
     aiConfigError.value = error instanceof Error ? error.message : TEXTS.ai.modelsUnavailable;
   } finally {
@@ -1186,9 +1205,10 @@ async function saveAiConfig(): Promise<void> {
   aiConfigBusy.value = true;
   aiConfigError.value = "";
   try {
-    const response = await apiFetch("/api/local/settings/ai", { method: "POST", body: JSON.stringify({ ...aiConfigForm.value, baseUrl: DEEPSEEK_API_URL }) });
-    const payload = await response.json() as { models?: string[]; model?: string; error?: string };
+    const response = await apiFetch("/api/local/settings/ai", { method: "POST", body: JSON.stringify({ ...aiConfigForm.value }) });
+    const payload = await response.json() as { provider?: string; models?: string[]; model?: string; error?: string };
     if (!response.ok) throw new Error(payload.error || TEXTS.ai.configSaveFailed);
+    if (payload.provider) aiConfigForm.value.provider = payload.provider;
     aiModels.value = payload.models ?? [];
     if (payload.model) aiConfigForm.value.model = payload.model;
     await refreshLocalSettings();
@@ -1439,7 +1459,7 @@ async function resetAllPersonalData(): Promise<void> {
   electricityResult.value = null;
   electricityError.value = "";
   electricityEditing.value = true;
-  localSettings.value = { campus: { configured: false, ssoAccount: "", jwglAccount: "" }, ai: { configured: false, baseUrl: "", model: "" } };
+  localSettings.value = { campus: { configured: false, ssoAccount: "", jwglAccount: "" }, ai: { configured: false, provider: "", baseUrl: "", model: "" } };
   campusDeleteConfirming.value = false;
   aiDeleteConfirming.value = false;
   aiModels.value = [];
@@ -3109,12 +3129,13 @@ function runAssistantAction(message: AssistantMessage): void {
     <div v-if="aiConfigOpen" class="modal-backdrop" @click.self="!aiConfigBusy && (aiConfigOpen = false)">
       <section class="modal credential-modal" role="dialog" aria-modal="true" aria-labelledby="ai-config-title">
         <header><div><span class="eyebrow">本机模型配置</span><h2 id="ai-config-title">配置学习助手</h2></div><button class="icon-button" type="button" aria-label="关闭" :disabled="aiConfigBusy" @click="aiConfigOpen = false"><IconGlyph name="close" /></button></header>
-        <p class="credential-disclosure">当前仅支持 DeepSeek 官方 API；只有完成配置后，助手才会向 DeepSeek 发送请求；API Key 使用系统加密能力保存在本机，可随时在设置中修改或删除</p>
+        <p class="credential-disclosure">可选 DeepSeek 官方 API 或北邮校园模型网关；只有完成配置后，助手才会向所选来源发送请求；API Key 使用系统加密能力保存在本机，可随时在设置中修改或删除</p>
         <form @submit.prevent="saveAiConfig">
-          <label>DeepSeek API URL<input v-model="aiConfigForm.baseUrl" inputmode="url" readonly aria-readonly="true" /></label>
-          <label>DeepSeek API Key<input v-model="aiConfigForm.apiKey" type="password" autocomplete="off" :placeholder="localSettings.ai.configured ? '留空表示不修改' : '请输入 DeepSeek API Key'" /></label>
+          <label v-if="aiProviders.length">服务来源<select v-model="aiConfigForm.provider" @change="onAiProviderChange"><option v-for="provider in aiProviders" :key="provider.id" :value="provider.id">{{ provider.label }}</option></select></label>
+          <label>接口地址<input :value="aiConfigUrl" inputmode="url" readonly aria-readonly="true" /></label>
+          <label>API Key<input v-model="aiConfigForm.apiKey" type="password" autocomplete="off" :placeholder="localSettings.ai.configured ? '留空表示不修改' : '请输入所选来源的 API Key'" /></label>
           <label v-if="aiModels.length">可用模型<select v-model="aiConfigForm.model"><option v-for="model in aiModels" :key="model" :value="model">{{ model }}</option></select></label>
-          <div class="model-detect-row"><span>{{ aiModels.length ? `当前支持 ${aiModels.length} 个 DeepSeek 模型` : '正在读取受支持模型' }}</span></div>
+          <div class="model-detect-row"><span>{{ aiModels.length ? `当前来源支持 ${aiModels.length} 个对话模型` : '正在读取受支持模型' }}</span></div>
           <p v-if="aiConfigError" class="form-error" role="alert">{{ aiConfigError }}</p>
           <footer><button class="secondary-button" type="button" :disabled="aiConfigBusy" @click="aiConfigOpen = false">{{ localSettings.ai.configured ? '取消' : '暂不配置' }}</button><button class="primary-button" type="submit" :disabled="aiConfigBusy">{{ aiConfigBusy ? '正在保存…' : '保存配置' }}</button></footer>
         </form>

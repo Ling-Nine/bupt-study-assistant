@@ -16,13 +16,16 @@ async function main() {
   }
   fs.cpSync(path.join(root, "web/dist"), path.join(assets, "web"), { recursive: true });
   fs.copyFileSync(path.join(runtime, "ui-bridge.js"), path.join(assets, "web/android-bridge.js"));
+  // 兼容垫片必须在界面脚本之前加载：旧 WebView 缺少 signal.reason 等 API。
+  fs.copyFileSync(path.join(runtime, "compat.js"), path.join(assets, "web/android-compat.js"));
   const entry = path.join(assets, "web/index.html");
-  const html = fs.readFileSync(entry, "utf8").replace("<head>", '<head><script src="./android-bridge.js"></script>');
+  const html = fs.readFileSync(entry, "utf8").replace("<head>",
+    '<head><script src="./android-compat.js"></script><script src="./android-bridge.js"></script>');
   fs.writeFileSync(entry, html);
   await build({
     entryPoints: [path.join(runtime, "entry.cjs")],
     outfile: path.join(assets, "runtime/runtime.js"),
-    bundle: true, format: "iife", platform: "browser", target: "chrome100",
+    bundle: true, format: "iife", platform: "browser", target: "chrome92",
     plugins: [{
       name: "android-platform",
       setup(build) {

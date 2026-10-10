@@ -55,16 +55,13 @@ public final class MainActivity extends Activity {
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(238, 244, 250));
         root.setOnApplyWindowInsetsListener((view, insets) -> {
-            if (Build.VERSION.SDK_INT >= 30) {
-                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            } else view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+            if (Build.VERSION.SDK_INT >= 30) applyModernInsets(view, insets);
+            else view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                 insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
         setContentView(root);
-        if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-            android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+        if (Build.VERSION.SDK_INT >= 33) registerBackCallback();
         startup = new TextView(this);
         startup.setText("邮学伴正在启动…");
         startup.setTextSize(18);
@@ -116,7 +113,7 @@ public final class MainActivity extends Activity {
                     else if (path.endsWith(".png")) mime = "image/png";
                     else if (path.endsWith(".woff2")) mime = "font/woff2";
                     WebResourceResponse response = new WebResourceResponse(mime, "UTF-8", getAssets().open(path.substring(1)));
-                    response.setResponseHeaders(Map.of(
+                    response.setResponseHeaders(headers(
                         "X-Content-Type-Options", "nosniff", "Cache-Control", "no-cache",
                         "Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: http://*.bupt.edu.cn; font-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'"));
                     return response;
@@ -181,8 +178,13 @@ public final class MainActivity extends Activity {
     }
 
     private static WebResourceResponse missing() {
-        return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Map.of(),
+        return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Collections.emptyMap(),
             new ByteArrayInputStream("Not found".getBytes(StandardCharsets.UTF_8)));
+    }
+    private static Map<String, String> headers(String... pairs) {
+        Map<String, String> result = new HashMap<>();
+        for (int index = 0; index + 1 < pairs.length; index += 2) result.put(pairs[index], pairs[index + 1]);
+        return result;
     }
     private void startupError(String message) {
         main.post(() -> {
@@ -228,9 +230,8 @@ public final class MainActivity extends Activity {
                 getWindow().setNavigationBarColor(color);
                 getWindow().setStatusBarContrastEnforced(false);
                 getWindow().setNavigationBarContrastEnforced(false);
-                getWindow().getInsetsController().setSystemBarsAppearance(
-                    dark ? 0 : WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
-                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+                if (Build.VERSION.SDK_INT >= 30) applyModernBarAppearance(dark);
+                else applyLegacyBarAppearance(dark);
             });
         }
         @JavascriptInterface public boolean syncReminders(String json) {
@@ -415,7 +416,7 @@ public final class MainActivity extends Activity {
             android.webkit.CookieManager cookies = android.webkit.CookieManager.getInstance();
             if (operation.equals("clearSessions")) {
                 for (String origin : origins) WebStorage.getInstance().deleteOrigin(origin);
-                for (String host : List.of("auth.bupt.edu.cn", "jwgl.bupt.edu.cn", "dekt.bupt.edu.cn", "my.bupt.edu.cn", "app.bupt.edu.cn", "ucloud.bupt.edu.cn", "apiucloud.bupt.edu.cn")) {
+                for (String host : Arrays.asList("auth.bupt.edu.cn", "jwgl.bupt.edu.cn", "dekt.bupt.edu.cn", "my.bupt.edu.cn", "app.bupt.edu.cn", "ucloud.bupt.edu.cn", "apiucloud.bupt.edu.cn")) {
                     WebStorage.getInstance().deleteOrigin("https://" + host);
                     WebStorage.getInstance().deleteOrigin("http://" + host);
                 }
@@ -424,7 +425,7 @@ public final class MainActivity extends Activity {
             }
             if (operation.equals("cookies")) {
                 JSONArray result = new JSONArray();
-                for (String host : List.of("auth.bupt.edu.cn", "my.bupt.edu.cn", "app.bupt.edu.cn", "jwgl.bupt.edu.cn", "dekt.bupt.edu.cn")) {
+                for (String host : Arrays.asList("auth.bupt.edu.cn", "my.bupt.edu.cn", "app.bupt.edu.cn", "jwgl.bupt.edu.cn", "dekt.bupt.edu.cn")) {
                     String address = (host.equals("my.bupt.edu.cn") ? "http://" : "https://") + host +
                         (host.equals("app.bupt.edu.cn") ? "/buptdf/wap/default/chong" : "/");
                     String value = cookies.getCookie(address);
@@ -524,9 +525,11 @@ public final class MainActivity extends Activity {
         for (int redirects = 0; redirects < 10; redirects++) {
             URL url = new URL(address);
             boolean campus = campusUrl(address);
-            boolean ai = url.getProtocol().equals("https") && url.getHost().equals("api.deepseek.com") &&
+            // 校园模型网关与官方 API 共用 AI 通道，以获得更长的读取超时。
+            boolean ai = url.getProtocol().equals("https") &&
+                Arrays.asList("api.deepseek.com", "myai.bupt.edu.cn").contains(url.getHost()) &&
                 url.getUserInfo() == null && (url.getPort() == -1 || url.getPort() == 443);
-            if ((!campus && !ai) || !List.of("GET", "POST", "DELETE").contains(method)) throw new Exception();
+            if ((!campus && !ai) || !Arrays.asList("GET", "POST", "DELETE").contains(method)) throw new Exception();
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connections.put(id, connection);
             try {
@@ -537,11 +540,12 @@ public final class MainActivity extends Activity {
                 connection.setRequestProperty("Accept-Encoding", "identity");
                 if (headers != null) for (Iterator<String> keys = headers.keys(); keys.hasNext();) {
                     String key = keys.next();
-                    if (List.of("host", "connection", "content-length").contains(key.toLowerCase(Locale.ROOT))) continue;
+                    if (Arrays.asList("host", "connection", "content-length").contains(key.toLowerCase(Locale.ROOT))) continue;
                     if (!url.getHost().equals(initialHost) && (key.equalsIgnoreCase("cookie") || key.equalsIgnoreCase("authorization") || key.equalsIgnoreCase("blade-auth") || key.equalsIgnoreCase("identity"))) continue;
                     connection.setRequestProperty(key, headers.getString(key));
                 }
-                if (campus && (headers == null || !headers.has("cookie") || !url.getHost().equals(initialHost))) {
+                // 模型网关用 Bearer 鉴权，不需要带上校园会话 Cookie。
+                if (campus && !ai && (headers == null || !headers.has("cookie") || !url.getHost().equals(initialHost))) {
                     String cookie = android.webkit.CookieManager.getInstance().getCookie(address);
                     if (cookie != null) connection.setRequestProperty("Cookie", cookie);
                 }
@@ -553,7 +557,7 @@ public final class MainActivity extends Activity {
                 if (campus) for (Map.Entry<String, List<String>> entry : connection.getHeaderFields().entrySet())
                     if ("set-cookie".equalsIgnoreCase(entry.getKey())) for (String cookie : entry.getValue())
                         android.webkit.CookieManager.getInstance().setCookie(address, cookie);
-                if (List.of(301, 302, 303, 307, 308).contains(status)) {
+                if (Arrays.asList(301, 302, 303, 307, 308).contains(status)) {
                     if ("error".equals(args.optString("redirect"))) throw new Exception();
                     String location = connection.getHeaderField("Location");
                     if (location == null) throw new Exception();
@@ -615,6 +619,27 @@ public final class MainActivity extends Activity {
         });
     }
     @Override public void onBackPressed() { handleBack(); }
+
+    // Split out of the API 30+ call sites below so Android 10 never has to resolve these classes.
+    private static void applyModernInsets(View view, WindowInsets insets) {
+        android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+        view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+    }
+    private void registerBackCallback() {
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+            android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+    }
+    private void applyModernBarAppearance(boolean dark) {
+        int light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+        getWindow().getInsetsController().setSystemBarsAppearance(dark ? 0 : light, light);
+    }
+    @SuppressWarnings("deprecation")
+    private void applyLegacyBarAppearance(boolean dark) {
+        int light = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        View decor = getWindow().getDecorView();
+        int flags = decor.getSystemUiVisibility();
+        decor.setSystemUiVisibility(dark ? flags & ~light : flags | light);
+    }
     @Override protected void onDestroy() {
         closed = true;
         if (fileCallback != null) fileCallback.onReceiveValue(null);

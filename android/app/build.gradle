@@ -15,7 +15,7 @@ android {
 
     defaultConfig {
         applicationId "cn.edu.bupt.youxueban"
-        minSdk 30
+        minSdk 29
         targetSdk 35
         versionCode 12001
         versionName "1.2.1"

@@ -1,3 +1,4 @@
+require("./compat.js");
 const { call, BrowserWindow, nativeFetch } = require("./platform.cjs");
 const { createLocalRuntime } = require("../../client/local-runtime.cjs");
 const { retryCampus } = require("./retry.cjs");

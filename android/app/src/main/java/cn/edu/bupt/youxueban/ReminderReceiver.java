@@ -6,6 +6,7 @@ import android.content.*;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import org.json.*;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -27,7 +28,7 @@ public final class ReminderReceiver extends BroadcastReceiver {
             if (input.length() > 10000) return false;
             JSONArray queue = new JSONArray();
             long now = System.currentTimeMillis();
-            Set<String> delivered = context.getSharedPreferences(STORE, 0).getStringSet("delivered", Set.of());
+            Set<String> delivered = context.getSharedPreferences(STORE, 0).getStringSet("delivered", Collections.emptySet());
             for (int i = 0; i < input.length(); i++) {
                 JSONObject item = input.getJSONObject(i);
                 long at = item.getLong("at");
@@ -85,7 +86,7 @@ public final class ReminderReceiver extends BroadcastReceiver {
 
     private static void deliver(Context context, JSONObject item) throws JSONException {
         SharedPreferences store = context.getSharedPreferences(STORE, 0);
-        Set<String> delivered = new HashSet<>(store.getStringSet("delivered", Set.of()));
+        Set<String> delivered = new HashSet<>(store.getStringSet("delivered", Collections.emptySet()));
         String id = item.getString("id");
         if (delivered.contains(id)) return;
         if (Build.VERSION.SDK_INT >= 33 &&
