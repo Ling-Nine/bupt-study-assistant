@@ -398,6 +398,12 @@ html[data-platform="android"] .course-homework-badge { flex: 0 0 auto; margin-to
 .activity-detail img { max-width: 100%; height: auto; }
 .activity-detail * { max-width: 100%; }
 .activity-detail table { display: block; overflow-x: auto; }
+/* 安卓端活动卡片默认折叠正文，只保留标题、地点、时间、状态与操作。 */
+.activity-fold { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.activity-fold-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 2px 0; border: 0; background: none; color: var(--blue); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.activity-fold-toggle .icon-glyph { transition: transform .2s ease; }
+.activity-fold-toggle .icon-glyph.is-open { transform: rotate(90deg); }
+.activity-fold .activity-detail { margin-top: 8px; }
 .campus-card footer { flex-wrap: wrap; overflow-wrap: anywhere; }
 .campus-content p { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.65; }
 .campus-content > span { display: flex; align-items: center; gap: 5px; margin-top: 9px; color: var(--text-secondary); font-size: 10px; }

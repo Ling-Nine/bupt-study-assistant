@@ -295,6 +295,8 @@ let homeworkController: AbortController | null = null;
 let homeworkTimer: number | undefined;
 let homeworkLastAttempt = 0;
 const campusTab = ref<"notice" | "activity">("notice");
+// 安卓端活动详情正文默认折叠，只保留标题、地点、时间、状态与操作，避免每条卡片过长。
+const expandedActivityIds = ref(new Set<string>());
 const campusSearch = ref("");
 const campusBusy = ref(false);
 const campusError = ref("");
@@ -1577,6 +1579,13 @@ const activityConflicts = computed(() => Object.fromEntries(campusItems.value
 
 function activityScheduled(item: CampusItem): boolean {
   return accountTasks.value.some(task => task.activityId === item.id && task.kind === "schedule");
+}
+
+function toggleActivityDetail(id: string): void {
+  const next = new Set(expandedActivityIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  expandedActivityIds.value = next;
 }
 
 function addActivitySchedule(item: CampusItem): void {
@@ -2970,12 +2979,16 @@ function runAssistantAction(message: AssistantMessage): void {
                   <div v-else-if="campusSummaryBusy[item.id]" class="summary-loading" role="status"><IconGlyph name="refresh" :size="14" />{{ TEXTS.campus.summaryLoading }}</div>
                   <template v-else><p v-if="item.summary" class="campus-summary">{{ item.summary }}</p><p v-if="campusSummaryError[item.id]" class="form-error" role="alert">{{ campusSummaryError[item.id] }}</p><button class="campus-summary-button" type="button" @click="summarizeCampusItem(item)"><IconGlyph name="assistant" :size="14" />{{ item.summary ? '重新生成 AI 通知总结' : '点击生成 AI 通知总结' }}</button></template>
                 </template>
-                <template v-else><div v-if="item.detailHtml" class="activity-detail" v-html="DOMPurify.sanitize(item.detailHtml, { ADD_ATTR: ['target'] })" /><p v-else>{{ item.summary || (item.detailError ? '' : '暂无活动详情') }}</p><p v-if="item.detailError" class="form-error" role="status">{{ item.detailError }}</p></template>
+                <template v-else><template v-if="!isAndroidRuntime || !item.detailHtml"><div v-if="item.detailHtml" class="activity-detail" v-html="DOMPurify.sanitize(item.detailHtml, { ADD_ATTR: ['target'] })" /><p v-else>{{ item.summary || (item.detailError ? '' : '暂无活动详情') }}</p></template><p v-if="item.detailError" class="form-error" role="status">{{ item.detailError }}</p></template>
                 <span v-if="item.campus"><IconGlyph name="map" :size="14" />{{ item.campus }}</span><span v-if="item.eventTime"><IconGlyph name="clock" :size="14" />{{ formatCampusDate(item.eventTime, true) }}<template v-if="item.eventEndTime"> - {{ formatCampusDate(item.eventEndTime, true) }}</template></span></div>
               <footer><template v-if="item.kind === 'activity'"><span class="activity-statuses"><b v-for="status in (item.activityStatus ?? ['状态未读取'])" :key="status" :class="{ full: status === '人数已满' }">{{ status }}</b><b v-if="isAndroidRuntime && activityConflicts[item.id]" :class="`time-conflict-${activityConflicts[item.id]}`" :title="activityConflicts[item.id] === 'direct' ? '与课程或日程直接重叠' : '双方前后各预留十分钟后重叠'">时间冲突 · {{ activityConflicts[item.id] === 'direct' ? '重叠' : '间隔不足' }}</b></span><time v-if="item.activityStatus?.includes('需报名')" class="activity-registration">报名：{{ item.registrationStartTime ? formatCampusDate(item.registrationStartTime, true) : '开始时间未提供' }} 至 {{ item.registrationEndTime ? formatCampusDate(item.registrationEndTime, true) : '结束时间未提供' }}</time></template><template v-else><span>{{ item.source }}</span><time>{{ formatCampusDate(item.publishedAt) }}</time></template></footer>
               <div v-if="isAndroidRuntime && item.kind === 'activity'" class="android-activity-actions">
                 <button type="button" class="secondary-button" :aria-pressed="registrationReminders.some(reminder => reminder.activityId === item.id)" @click="toggleRegistrationReminder(item)"><IconGlyph name="bell" />{{ registrationReminders.some(reminder => reminder.activityId === item.id) ? '取消报名提醒' : '提醒报名' }}</button>
                 <button type="button" class="secondary-button" :disabled="activityScheduled(item)" @click="addActivitySchedule(item)"><IconGlyph :name="activityScheduled(item) ? 'check' : 'plus'" />{{ activityScheduled(item) ? '已加入日程' : '加入日程' }}</button>
+              </div>
+              <div v-if="isAndroidRuntime && item.kind === 'activity' && item.detailHtml" class="activity-fold">
+                <button type="button" class="activity-fold-toggle" :aria-expanded="expandedActivityIds.has(item.id)" @click="toggleActivityDetail(item.id)"><IconGlyph name="chevron-right" :size="14" :class="{ 'is-open': expandedActivityIds.has(item.id) }" />{{ expandedActivityIds.has(item.id) ? '收起活动详情' : '展开活动详情' }}</button>
+                <div v-if="expandedActivityIds.has(item.id)" class="activity-detail" v-html="DOMPurify.sanitize(item.detailHtml, { ADD_ATTR: ['target'] })" />
               </div>
             </article>
           </div>
